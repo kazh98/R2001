@@ -5,7 +5,7 @@
 
 
 ;;;
-;;;
+;;; Miscellaneous functions
 ;;;
 (define (clamp min max x)
   (cond ((<= x min) min)
@@ -20,7 +20,7 @@
 
 
 ;;;
-;;;
+;;; SCSI Timer
 ;;;
 (define scsi-timer%
   (class object%
@@ -82,9 +82,28 @@
 
     (define/public (reset!)
       (set! elapsed 0)
-      (set! started #f))
+      (set! started #f))))
+
+(define *scsi* (new scsi-timer%))
+
+
+;;;
+;;; GUIパーツ
+;;;
+(define timer-view%
+  (class canvas%
+    (super-new)
+    (init scsi)
+    (define _scsi scsi)
     
-    (define/public (draw g width height)
+    (new timer%
+         (notify-callback (lambda()
+                            (send this refresh)))
+         (interval 20))
+    
+    (define/override (on-paint)
+      (define-values (width height) (send this get-size))
+      (define g (send this get-dc))
       (define (draw-text/size text x y width height (align 'left))
         (let*-values (((w h _1 _2) (send g get-text-extent text))
                       ((scal) (min (/ width w) (/ height h)))
@@ -107,44 +126,43 @@
         (send g set-pen (make-pen #:color "Orange"))
         (send g draw-rectangle x y width height)
         (draw-text/size text x y width height 'center))
+      
       (send g set-background "Black")
       (send g clear)
       (send g set-text-foreground "Orange")
       (draw-text/size "残り時間" 0 0 width (* height 0.2))
-      (draw-text/size (format-seconds (get-remaining))
+      (draw-text/size (format-seconds (send _scsi get-remaining))
                       0 (* height 0.2) width (* height 0.6) 'center)
       (draw-button "BELL1" (* width 0.1) (* height 0.9) (* width 0.2) (* height 0.1)
-                   (get-bell-status 1))
+                   (send _scsi get-bell-status 1))
       (draw-button "BELL2" (* width 0.4) (* height 0.9) (* width 0.2) (* height 0.1)
-                   (get-bell-status 2))
+                   (send _scsi get-bell-status 2))
       (draw-button "BELL3" (* width 0.7) (* height 0.9) (* width 0.2) (* height 0.1)
-                   (get-bell-status 3))
-      (void))
-    ))
-
-(define *scsi* (new scsi-timer%))
+                   (send _scsi get-bell-status 3))
+      (void))))
 
 
 ;;;
+;;; 表示ウィンドウ
 ;;;
+(define view-frame%
+  (class frame%
+    (init scsi (width 640) (height 480))
+    (super-new
+     (width width) (height height))
+  
+    (new timer-view% (parent this)
+         (scsi scsi))))
+
+(let ((frame (new view-frame%
+                  (label "Presentation Timer")
+                  (scsi *scsi*))))
+  (send frame show #t)
+  (void))
+
+
 ;;;
-(define *view-frame*
-  (new frame% (label "Presentation Timer")
-       (width 640) (height 480)))
-
-(let ((view (new canvas% (parent *view-frame*)
-                   (paint-callback (lambda (c g)
-                                     (let-values (((width height) (send c get-size))) 
-                                       (send *scsi* draw g width height)))))))
-  (new timer%
-       (notify-callback (lambda () (send view refresh)))
-       (interval 20)))
-
-(send *view-frame* show #t)
-
-
-;;;
-;;;
+;;; 制御ウィンドウ
 ;;;
 (define *controller-frame*
   (new frame% (label "Controller")))
@@ -166,15 +184,10 @@
                    (send *scsi* reset!)
                    (send start-btn set-label "開始")))))
 
-(let ((monitor (new canvas% (parent *controller-frame*)
+(new timer-view% (parent *controller-frame*)
                     (style '(border))
                     (min-width 320) (min-height 240)
-                    (paint-callback (lambda (c g)
-                                      (let-values (((width height) (send c get-size)))
-                                        (send *scsi* draw g width height)))))))
-  (new timer%
-       (notify-callback (lambda () (send monitor refresh)))
-       (interval 20)))
+                    (scsi *scsi*))
 
 (let* ((group (new group-box-panel% (parent *controller-frame*)
                    (label "BELL1") (stretchable-height #f)))
