@@ -7,6 +7,10 @@
 ;;;
 ;;; Miscellaneous functions
 ;;;
+(define (pa$ f . p-args)
+  (lambda s-args
+    (apply f (append p-args s-args))))
+
 (define (clamp min max x)
   (cond ((<= x min) min)
         ((<= max x) max)
@@ -26,45 +30,56 @@
   (class object%
     (super-new)
 
-    (field (time1 (* 4 60))
-           (time2 (* 5 60))
-           (time3 (* 8 60))
-           (origins '(3)))
     (define elapsed 0)
     (define started #f)
 
+    (define bells (map (pa$ * 60) '(4 5 8)))
+    (define origins '(3))
+    
+    (define/public (set-bell! chap value)
+      (set! bells (let lp ((n (- chap 1)) (prev 0) (ls bells))
+                    (if (zero? n)
+                        (cons (max prev value) (map (pa$ max value) (cdr ls)))
+                        (cons (car ls) (lp (- n 1) (car ls) (cdr ls)))))))
+    
+    (define/public (get-bell chap)
+      (if (<= chap 0) 0
+          (car (drop bells (- chap 1)))))
+
+    (define/public (get-bell-length chap)
+      (- (get-bell chap) (get-bell (- chap 1))))
+
+    (define/public (is-origin? chap)
+      (if (member chap origins =) #t #f))
+    
+    (define/public (set-origin chap (value #t))
+      (if value
+          (unless (is-origin? chap)
+            (set! origins (cons chap origins)))
+          (unset-origin chap)))
+
+    (define/public (unset-origin chap)
+      (set! origins (remove chap origins =)))
+    
     (define/public (is-started?)
       (if started #t #f))
     
     (define/public (get-elapsed (chap 0))
-        (cond ((= chap 1)
-               (clamp 0 time1 elapsed))
-              ((= chap 2)
-               (- (clamp time1 time2 elapsed) time1))
-              ((= chap 3)
-               (- (clamp time2 time3 elapsed) time2))
-              (else elapsed)))
+      (if (= chap 0) elapsed
+          (- (clamp (get-bell (- chap 1)) (get-bell chap) elapsed) (get-bell (- chap 1)))))
 
     (define/public (get-remaining (chap 0))
-      (cond ((= chap 1)
-             (- time1 (clamp 0 time1 elapsed)))
-            ((= chap 2)
-             (- time2 (clamp time1 time2 elapsed)))
-            ((= chap 3)
-             (- time3 (clamp time2 time3 elapsed)))
-            ((and (member 2 origins =) (< elapsed time1))
-             (- time1 elapsed))
-            ((and (member 3 origins =) (< elapsed time2))
-             (- time2 elapsed))
-            (else (max 0 (- time3 elapsed)))))
+      (if (= chap 0)
+          (let lp ((ls origins))
+            (cond ((null? ls)
+                   (max 0 (- (car (take-right bells 1)) elapsed)))
+                  ((< elapsed (get-bell (car ls)))
+                   (- (get-bell (car ls)) elapsed))
+                  (else (lp (cdr ls)))))
+          (- (get-bell chap) (clamp (get-bell (- chap 1)) (get-bell chap) elapsed))))
 
     (define/public (get-bell-status chap)
-      (cond ((= chap 1)
-             (<= time1 (get-elapsed)))
-            ((= chap 2)
-             (<= time2 (get-elapsed)))
-            ((= chap 3)
-             (<= time3 (get-elapsed)))))
+      (<= (get-bell chap) elapsed))
 
     (define/private (refresh!)
       (if (is-started?)
@@ -159,6 +174,8 @@
     (super-new
      (label "View")
      (width width) (height height))
+
+    (define/augment (can-close?) #f)
   
     (new timer-view% (parent this)
          (scsi scsi))))
@@ -173,13 +190,14 @@
      (label "Controller"))
     (init scsi)
 
+    (define/augment (on-close)
+      (exit))
+    
     (define tuner%
       (class group-box-panel%
-        (init scsi bind-id)
-        (define id bind-id)
-        (define tid (string->symbol (format "time~A" bind-id)))
+        (init scsi id)
         (super-new
-         (label (format "BELL~A" bind-id))
+         (label (format "BELL~A" id))
          (stretchable-height #f))
     
         (define hpane
@@ -188,36 +206,35 @@
         (define field
           (new text-field% (parent hpane)
                (label #f)
-               (init-value (number->string (quotient (dynamic-get-field tid scsi) 60)))
+               (init-value (number->string (quotient (send scsi get-bell id) 60)))
                (callback (lambda (sender e)
                            (let ((value (string->number (send sender get-value))))
                              (when (natural? value)
-                               (dynamic-set-field! tid scsi (* value 60))))))))
+                               (send scsi set-bell! id (* value 60))))))))
         (new message% (parent hpane)
              (label "分"))
         (when (<= 2 id)
           (new check-box% (parent hpane)
                (label "残時間基準")
-               (value (member id (get-field origins scsi) =))
+               (value (send scsi is-origin? id))
                (callback (lambda (sender e)
                            (if (send sender get-value)
-                               (unless (member id (get-field origins scsi) =)
-                                 (set-field! origins scsi (cons id (get-field origins scsi))))
-                               (set-field! origins scsi (remove id (get-field origins scsi) =)))))))
+                               (send scsi set-origin id)
+                               (send scsi unset-origin id))))))
     
         (define status
           (new gauge% (parent this)
                (label (format-seconds (send scsi get-remaining id)))
-               (range (dynamic-get-field tid scsi))))
+               (range (send scsi get-bell-length id))))
         (send scsi add-callback!
               (lambda ()
-                (cond ((zero? (dynamic-get-field tid scsi))
+                (cond ((zero? (send scsi get-bell-length id))
                        (send status set-label (format-seconds 0))
-                       (send status set-range id)
+                       (send status set-range 1)
                        (send status set-value (if (send scsi get-bell-status id) 1 0)))
                       (else
                        (send status set-label (format-seconds (send scsi get-remaining id)))
-                       (send status set-range (dynamic-get-field tid scsi))
+                       (send status set-range (send scsi get-bell-length id))
                        (send status set-value (send scsi get-elapsed id))))))))
 
     (let* ((top-panel (new horizontal-panel% (parent this)
@@ -242,9 +259,9 @@
          (min-width 320) (min-height 240)
          (scsi scsi))
 
-    (new tuner% (parent this) (scsi scsi) (bind-id 1))
-    (new tuner% (parent this) (scsi scsi) (bind-id 2))
-    (new tuner% (parent this) (scsi scsi) (bind-id 3))))
+    (new tuner% (parent this) (scsi scsi) (id 1))
+    (new tuner% (parent this) (scsi scsi) (id 2))
+    (new tuner% (parent this) (scsi scsi) (id 3))))
 
 
 ;;;
