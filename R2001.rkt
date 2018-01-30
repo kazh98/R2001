@@ -83,12 +83,12 @@
     (define/public (reset!)
       (set! elapsed 0)
       (set! started #f))))
-
+    
 (define *scsi* (new scsi-timer%))
 
 
 ;;;
-;;; GUIパーツ
+;;; 共通GUIパーツ
 ;;;
 (define timer-view%
   (class canvas%
@@ -149,141 +149,100 @@
   (class frame%
     (init scsi (width 640) (height 480))
     (super-new
+     (label "View")
      (width width) (height height))
   
     (new timer-view% (parent this)
          (scsi scsi))))
 
-(let ((frame (new view-frame%
-                  (label "Presentation Timer")
-                  (scsi *scsi*))))
-  (send frame show #t)
-  (void))
-
 
 ;;;
 ;;; 制御ウィンドウ
 ;;;
-(define *controller-frame*
-  (new frame% (label "Controller")))
+(define controller-frame%
+  (class frame%
+    (super-new
+     (label "Controller"))
+    (init scsi)
 
-(let* ((top-panel (new horizontal-panel% (parent *controller-frame*)
-                       (alignment '(left top)) (stretchable-height #f)))
-       (start-btn (new button% (parent top-panel)
-                       (label "開始")
-                       (callback (lambda (b e)
-                                   (cond ((string=? (send b get-label) "停止")
-                                          (send *scsi* stop!)
-                                          (send b set-label "開始"))
-                                         (else
-                                          (send *scsi* start!)
-                                          (send b set-label "停止"))))))))
-  (new button% (parent top-panel)
-       (label "初期化")
-       (callback (lambda (b e)
-                   (send *scsi* reset!)
-                   (send start-btn set-label "開始")))))
-
-(new timer-view% (parent *controller-frame*)
-                    (style '(border))
-                    (min-width 320) (min-height 240)
-                    (scsi *scsi*))
-
-(let* ((group (new group-box-panel% (parent *controller-frame*)
-                   (label "BELL1") (stretchable-height #f)))
-       (hpane (new horizontal-panel% (parent group)
-                   (alignment '(left top))))
-       (field (new text-field% (parent hpane)
-                   (label #f)
-                   (init-value (number->string (quotient (get-field time1 *scsi*) 60)))
+    (define tuner%
+      (class group-box-panel%
+        (init scsi bind-id)
+        (define _scsi scsi)
+        (define id bind-id)
+        (define tid (string->symbol (format "time~A" bind-id)))
+        (super-new
+         (label (format "BELL~A" bind-id))
+         (stretchable-height #f))
+    
+        (define hpane
+          (new horizontal-panel% (parent this)
+               (alignment '(left top))))
+        (define field
+          (new text-field% (parent hpane)
+               (label #f)
+               (init-value (number->string (quotient (dynamic-get-field tid _scsi) 60)))
                (callback (lambda (sender e)
                            (let ((value (string->number (send sender get-value))))
                              (when (natural? value)
-                               (set-field! time1 *scsi* (* value 60))))))))
-       (_ (new message% (parent hpane) (label "分")))
-       (status (new gauge% (parent group)
-                    (label (format-seconds (send *scsi* get-remaining 1)))
-                    (range (get-field time1 *scsi*)))))
-  (new timer%
-       (notify-callback (lambda ()
-                          (cond ((zero? (get-field time1 *scsi*))
-                                 (send status set-label (format-seconds 0))
-                                 (send status set-range 1)
-                                 (send status set-value (if (send *scsi* get-bell-status 1) 1 0)))
-                                (else
-                                 (send status set-label (format-seconds (send *scsi* get-remaining 1)))
-                                 (send status set-range (get-field time1 *scsi*))
-                                 (send status set-value (send *scsi* get-elapsed 1))))))
-       (interval 20)))
-
-(let* ((group (new group-box-panel% (parent *controller-frame*)
-                   (label "BELL2") (stretchable-height #f)))
-       (hpane (new horizontal-panel% (parent group)
-                   (alignment '(left top))))
-       (field (new text-field% (parent hpane)
-                   (label #f)
-                   (init-value (number->string (quotient (get-field time2 *scsi*) 60)))
-               (callback (lambda (sender e)
-                           (let ((value (string->number (send sender get-value))))
-                             (when (natural? value)
-                               (set-field! time2 *scsi* (* value 60))))))))
-       (_ (new message% (parent hpane) (label "分")))
-       (_ (new check-box% (parent hpane)
+                               (dynamic-set-field! tid _scsi (* value 60))))))))
+        (new message% (parent hpane)
+             (label "分"))
+        (when (<= 2 id)
+          (new check-box% (parent hpane)
                (label "残時間基準")
-               (value (member 2 (get-field origins *scsi*) =))
+               (value (member id (get-field origins _scsi) =))
                (callback (lambda (sender e)
                            (if (send sender get-value)
-                               (unless (member 2 (get-field origins *scsi*) =)
-                                 (set-field! origins *scsi* (cons 2 (get-field origins *scsi*))))
-                               (set-field! origins *scsi* (remove 2 (get-field origins *scsi*) =)))))))
-       (status (new gauge% (parent group)
-                    (label (format-seconds (send *scsi* get-remaining 1)))
-                    (range (get-field time2 *scsi*)))))
-  (new timer%
-       (notify-callback (lambda ()
-                          (cond ((zero? (get-field time2 *scsi*))
-                                 (send status set-label (format-seconds 0))
-                                 (send status set-range 1)
-                                 (send status set-value (if (send *scsi* get-bell-status 2) 1 0)))
-                                (else
-                                 (send status set-label (format-seconds (send *scsi* get-remaining 2)))
-                                 (send status set-range (get-field time2 *scsi*))
-                                 (send status set-value (send *scsi* get-elapsed 2))))))
-       (interval 20)))
+                               (unless (member id (get-field origins _scsi) =)
+                                 (set-field! origins _scsi (cons id (get-field origins _scsi))))
+                               (set-field! origins _scsi (remove id (get-field origins _scsi) =)))))))
+    
+        (define status
+          (new gauge% (parent this)
+               (label (format-seconds (send _scsi get-remaining id)))
+               (range (dynamic-get-field tid _scsi))))
+        (new timer%
+             (notify-callback (lambda ()
+                                (cond ((zero? (dynamic-get-field tid _scsi))
+                                       (send status set-label (format-seconds 0))
+                                       (send status set-range id)
+                                       (send status set-value (if (send _scsi get-bell-status id) 1 0)))
+                                      (else
+                                       (send status set-label (format-seconds (send _scsi get-remaining id)))
+                                       (send status set-range (dynamic-get-field tid _scsi))
+                                       (send status set-value (send _scsi get-elapsed id))))))
+             (interval 20))))
 
-(let* ((group (new group-box-panel% (parent *controller-frame*)
-                   (label "BELL3") (stretchable-height #f)))
-       (hpane (new horizontal-panel% (parent group)
-                   (alignment '(left top))))
-       (field (new text-field% (parent hpane)
-                   (label #f)
-                   (init-value (number->string (quotient (get-field time3 *scsi*) 60)))
-               (callback (lambda (sender e)
-                           (let ((value (string->number (send sender get-value))))
-                             (when (natural? value)
-                               (set-field! time3 *scsi* (* value 60))))))))
-       (_ (new message% (parent hpane) (label "分")))
-       (_ (new check-box% (parent hpane)
-               (label "残時間基準")
-               (value (member 3 (get-field origins *scsi*) =))
-               (callback (lambda (sender e)
-                           (if (send sender get-value)
-                               (unless (member 3 (get-field origins *scsi*) =)
-                                 (set-field! origins *scsi* (cons 3 (get-field origins *scsi*))))
-                               (set-field! origins *scsi* (remove 3 (get-field origins *scsi*) =)))))))
-       (status (new gauge% (parent group)
-                    (label (format-seconds (send *scsi* get-remaining 1)))
-                    (range (get-field time3 *scsi*)))))
-  (new timer%
-       (notify-callback (lambda ()
-                          (cond ((zero? (get-field time3 *scsi*))
-                                 (send status set-label (format-seconds 0))
-                                 (send status set-range 1)
-                                 (send status set-value (if (send *scsi* get-bell-status 3) 1 0)))
-                                (else
-                                 (send status set-label (format-seconds (send *scsi* get-remaining 3)))
-                                 (send status set-range (get-field time3 *scsi*))
-                                 (send status set-value (send *scsi* get-elapsed 3))))))
-       (interval 20)))
+    (let* ((top-panel (new horizontal-panel% (parent this)
+                           (alignment '(left top)) (stretchable-height #f)))
+           (start-btn (new button% (parent top-panel)
+                           (label "開始")
+                           (callback (lambda (b e)
+                                       (cond ((string=? (send b get-label) "停止")
+                                              (send scsi stop!)
+                                              (send b set-label "開始"))
+                                             (else
+                                              (send scsi start!)
+                                              (send b set-label "停止"))))))))
+      (new button% (parent top-panel)
+           (label "初期化")
+           (callback (lambda (b e)
+                       (send scsi reset!)
+                       (send start-btn set-label "開始")))))
 
-(send *controller-frame* show #t)
+    (new timer-view% (parent this)
+         (style '(border))
+         (min-width 320) (min-height 240)
+         (scsi scsi))
+    
+    (new tuner% (parent this) (scsi scsi) (bind-id 1))
+    (new tuner% (parent this) (scsi scsi) (bind-id 2))
+    (new tuner% (parent this) (scsi scsi) (bind-id 3))))
+
+
+;;;
+;;; アプリケーションの起動
+;;;
+(send (new view-frame% (scsi *scsi*)) show #t)
+(send (new controller-frame% (scsi *scsi*)) show #t)
