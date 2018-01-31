@@ -122,10 +122,11 @@
     (super-new)
     (init scsi)
     (define _scsi scsi)
+    (inherit get-size get-dc refresh)
     
     (define/override (on-paint)
-      (define-values (width height) (send this get-size))
-      (define g (send this get-dc))
+      (define-values (width height) (get-size))
+      (define g (get-dc))
       (define (draw-text/size text x y width height (align 'left))
         (let*-values (((w h _1 _2) (send g get-text-extent text))
                       ((scal) (min (/ width w) (/ height h)))
@@ -162,7 +163,7 @@
                      (send _scsi get-bell-status i))))
 
     (send scsi add-callback!
-          (lambda () (send this refresh)))))
+          (lambda () (refresh)))))
 
 
 ;;;
