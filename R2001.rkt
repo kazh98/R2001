@@ -73,8 +73,8 @@
           (let lp ((ls origins))
             (cond ((null? ls)
                    (max 0 (- (car (take-right bells 1)) elapsed)))
-                  ((< elapsed (get-bell (car ls)))
-                   (- (get-bell (car ls)) elapsed))
+                  ((< elapsed (get-bell (- (car ls) 1)))
+                   (- (get-bell (- (car ls) 1)) elapsed))
                   (else (lp (cdr ls)))))
           (- (get-bell chap) (clamp (get-bell (- chap 1)) (get-bell chap) elapsed))))
 
