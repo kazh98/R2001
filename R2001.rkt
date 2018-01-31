@@ -60,6 +60,9 @@
     
     (define/public (is-started?)
       (if started #t #f))
+
+    (define/public (get-raw-elapsed)
+      elapsed)
     
     (define/public (get-elapsed (chap 0))
       (if (= chap 0) elapsed
@@ -245,13 +248,21 @@
                                               (send b set-label "開始"))
                                              (else
                                               (send scsi start!)
-                                              (send b set-label "停止"))))))))
-      (new button% (parent top-panel)
-           (label "初期化")
-           (callback (lambda (b e)
-                       (send scsi reset!)
-                       (send start-btn set-label "開始")))))
+                                              (send b set-label "停止")))))))
+           (_ (new button% (parent top-panel)
+                   (label "初期化")
+                   (callback (lambda (b e)
+                               (send scsi reset!)
+                               (send start-btn set-label "開始")))))
+           (elapsed (new message% (parent top-panel)
+                         (label (string-append "経過時間: " (format-seconds 0))))))
+      (send scsi add-callback!
+            (lambda ()
+              (send elapsed set-label (string-append "経過時間: " (format-seconds (send scsi get-raw-elapsed)))))))
+           
+                  
 
+    
     (new timer-view% (parent this)
          (style '(border))
          (min-width 320) (min-height 240)
