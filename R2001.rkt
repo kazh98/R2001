@@ -36,15 +36,12 @@
     (define bells (map (pa$ * 60) '(4 5 8)))
     (define origins '(3))
     
-    (define/public (set-bell! chap value)
-      (set! bells (let lp ((n (- chap 1)) (prev 0) (ls bells))
-                    (if (zero? n)
-                        (cons (max prev value) (map (pa$ max value) (cdr ls)))
-                        (cons (car ls) (lp (- n 1) (car ls) (cdr ls)))))))
-    
     (define/public (get-bell chap)
-      (if (<= chap 0) 0
-          (car (drop bells (- chap 1)))))
+      (apply max 0 (take bells chap)))
+    
+    (define/public (set-bell! chap value)
+      (set! bells (let-values (((pre post) (split-at bells (- chap 1))))
+                    (append pre (list value) (cdr post)))))
 
     (define/public (get-bell-length chap)
       (- (get-bell chap) (get-bell (- chap 1))))
